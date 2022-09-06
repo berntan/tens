@@ -36,6 +36,9 @@ module Extensions =
 module State =
     open Extensions
 
+    let private withoutCommands state =
+        state, Cmd.none
+
     let random = System.Random()
 
     let removeIndexAt index list =
@@ -48,7 +51,7 @@ module State =
     let startGame =
         let start dispatch =
             let callback = (fun () -> dispatch <| NewNumber (random.Next(1, 9)))
-            let tickId = setInterval callback 1500
+            let tickId = setInterval callback 1100
             dispatch (GameStarted tickId)
 
         Cmd.ofSub start
@@ -74,8 +77,45 @@ module State =
             TickId = tickId
         }
 
+    let private finishedGame state =
+        Finished state.Score, stopTicking state.TickId
+
+    let private withHandledClickOn index state =
+        state.Numbers
+        |> List.tryItem index
+        |> Option.map (fun number ->
+            let newState =
+                { state with
+                    Clicked = number :: state.Clicked
+                    Numbers = state.Numbers |> removeIndexAt index
+                }
+            if newState.Clicked |> List.sum = 10 then
+                Running {
+                    newState with
+                        Score = newState.Score + 1
+                        Clicked = []
+                } |> withoutCommands
+            elif newState.Clicked |> List.length >= 3 then
+                finishedGame newState
+            else
+                Running newState |> withoutCommands
+        )
+        |> Option.defaultValue (Running state |> withoutCommands)
+
+    let private withAddedNumber number state =
+        let newState = {
+            state with Numbers = state.Numbers @ [number]
+        }
+
+        if newState.Numbers |> List.length = 10 then
+            finishedGame newState
+        else
+            Running newState |> withoutCommands
+
+
     let update (msg: Msg) (state: State) =
         match state, msg with
+
         | NotStarted, Start ->
             state, startGame
 
@@ -83,39 +123,15 @@ module State =
             state, startGame
 
         | (NotStarted | Finished _), GameStarted tickId ->
-            Running (initializedGame tickId), Cmd.none
+             initializedGame tickId
+             |> Running
+             |> withoutCommands
 
         | Running state, Clicked index ->
-            state.Numbers
-            |> List.tryItem index
-            |> Option.map (fun number ->
-                let newState =
-                    { state with
-                        Clicked = number :: state.Clicked
-                        Numbers = state.Numbers |> removeIndexAt index
-                    }
-                if newState.Clicked |> List.sum = 10 then
-                    Running {
-                        newState with
-                            Score = newState.Score + 1
-                            Clicked = []
-                    }, Cmd.none
-                elif newState.Clicked |> List.length >= 3 then
-                    Finished newState.Score, stopTicking newState.TickId
-                else
-                    Running newState, Cmd.none
-            )
-            |> Option.defaultValue (Running state, Cmd.none)
+            state |> withHandledClickOn index
 
         | Running state, NewNumber number ->
-            let newState = {
-                state with Numbers = state.Numbers @ [number]
-            }
-
-            if newState.Numbers |> List.length = 10 then
-                Finished newState.Score, stopTicking newState.TickId
-            else
-                Running newState, Cmd.none
+            state |> withAddedNumber number
 
         | _ -> state, Cmd.none
 
