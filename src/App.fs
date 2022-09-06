@@ -41,7 +41,7 @@ module State =
 
     let random = System.Random()
 
-    let removeIndexAt index list =
+    let private removeIndexAt index list =
         list
         |> List.mapi (fun i e -> (i <> index , e))
         |> List.filter fst
@@ -80,26 +80,37 @@ module State =
     let private finishedGame state =
         Finished state.Score, stopTicking state.TickId
 
+    let private (|AddedExactlyTen|ClickedTooMany|StillGood|) state =
+        if state.Clicked |> List.sum = 10 then
+            AddedExactlyTen
+        elif state.Clicked |> List.length >= 3 then
+            ClickedTooMany
+        else
+            StillGood
+
+    let private handleClickOn index state number =
+        let newState =
+            { state with
+                Clicked = number :: state.Clicked
+                Numbers = state.Numbers |> removeIndexAt index
+            }
+
+        match newState with
+        | AddedExactlyTen ->
+            Running {
+                newState with
+                    Score = newState.Score + 1
+                    Clicked = []
+            } |> withoutCommands
+        | ClickedTooMany ->
+            finishedGame newState
+        | StillGood ->
+            Running newState |> withoutCommands
+
     let private withHandledClickOn index state =
         state.Numbers
         |> List.tryItem index
-        |> Option.map (fun number ->
-            let newState =
-                { state with
-                    Clicked = number :: state.Clicked
-                    Numbers = state.Numbers |> removeIndexAt index
-                }
-            if newState.Clicked |> List.sum = 10 then
-                Running {
-                    newState with
-                        Score = newState.Score + 1
-                        Clicked = []
-                } |> withoutCommands
-            elif newState.Clicked |> List.length >= 3 then
-                finishedGame newState
-            else
-                Running newState |> withoutCommands
-        )
+        |> Option.map (handleClickOn index state)
         |> Option.defaultValue (Running state |> withoutCommands)
 
     let private withAddedNumber number state =
@@ -138,6 +149,19 @@ module State =
 module View =
     let private renderNotStarted dispatch =
         Html.div [
+            (*
+            Tens!
+
+Numbers are going to show up on the screen.
+
+Select two or three numbers that equal 10 when added up.
+
+If they are over ten, GAME OVER!
+
+If you choose three and they are under ten, GAME OVER!
+
+If 10 numbers are displayed without clearing any out, GAME OVER!
+            *)
             Html.button [
                 prop.style [
                     style.fontSize 20
