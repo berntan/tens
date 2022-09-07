@@ -11,12 +11,19 @@ type Running =
         Numbers : int list
         Clicked : int list
         TickId : int
+        HighScore: int
+    }
+
+type Finished =
+    {
+        Score: int
+        HighScore: int
     }
 
 type State =
     | NotStarted
     | Running of Running
-    | Finished of int
+    | Finished of Finished
 
 type Msg =
     | Clicked of int
@@ -69,16 +76,21 @@ module State =
         NotStarted, Cmd.none
 
 
-    let private initializedGame tickId =
+    let private initializedGame tickId highScore =
         {
             Score = 0
             Numbers = []
             Clicked = []
             TickId = tickId
+            HighScore = highScore
         }
 
-    let private finishedGame state =
-        Finished state.Score, stopTicking state.TickId
+    let private finishedGame (state: Running) =
+        let finishedState = {
+            Score = state.Score
+            HighScore = state.HighScore
+        }
+        Finished finishedState, stopTicking state.TickId
 
     let private (|AddedExactlyTen|ClickedTooMany|StillGood|) state =
         if state.Clicked |> List.sum = 10 then
@@ -97,9 +109,12 @@ module State =
 
         match newState with
         | AddedExactlyTen ->
+            let score = newState.Score + 1
+            let highScore = max score newState.HighScore
             Running {
                 newState with
-                    Score = newState.Score + 1
+                    Score = score
+                    HighScore = highScore
                     Clicked = []
             } |> withoutCommands
         | ClickedTooMany ->
@@ -130,11 +145,20 @@ module State =
         | NotStarted, Start ->
             state, startGame
 
-        | Finished _, Restart ->
-            state, startGame
+        | Finished finishedState, Restart ->
+            let highScore = max finishedState.Score finishedState.HighScore
+            let newState = {
+                finishedState with HighScore = highScore
+            }
+            newState |> Finished, startGame
 
-        | (NotStarted | Finished _), GameStarted tickId ->
-             initializedGame tickId
+        | NotStarted, GameStarted tickId ->
+             initializedGame tickId 0
+             |> Running
+             |> withoutCommands
+
+        | Finished finishedState, GameStarted tickId ->
+             initializedGame tickId finishedState.HighScore
              |> Running
              |> withoutCommands
 
@@ -149,26 +173,25 @@ module State =
 module View =
     let private renderNotStarted dispatch =
         Html.div [
-            (*
-            Tens!
+            prop.style [
+                style.textAlign.center
+            ]
+            prop.children [
+                Html.p "Tiere!"
+                Html.p "Tall kommer til å bli vist på skjermen."
+                Html.p "Velg to eller tre tall som blir 10 summert."
+                Html.p "Hvis de er større enn ti, GAME OVER!"
+                Html.p "Hvis du velger tre og de er mindre enn ti, GAME OVER!"
+                Html.p "Hvis 10 tall vises, GAME OVER!"
 
-Numbers are going to show up on the screen.
-
-Select two or three numbers that equal 10 when added up.
-
-If they are over ten, GAME OVER!
-
-If you choose three and they are under ten, GAME OVER!
-
-If 10 numbers are displayed without clearing any out, GAME OVER!
-            *)
-            Html.button [
-                prop.style [
-                    style.fontSize 20
-                    style.padding 20
+                Html.button [
+                    prop.style [
+                        style.fontSize 20
+                        style.padding 20
+                    ]
+                    prop.onClick (fun _ -> dispatch Start)
+                    prop.text "Start spillet"
                 ]
-                prop.onClick (fun _ -> dispatch Start)
-                prop.text "Start Game"
             ]
         ]
 
@@ -182,24 +205,39 @@ If 10 numbers are displayed without clearing any out, GAME OVER!
             prop.text number
         ]
 
-
-    let private renderRunning state dispatch =
+    let private renderRunning (state: Running) dispatch =
         Html.div [
+            yield (Html.div (sprintf "Poeng: %i" state.Score))
             yield! state.Numbers |> List.mapi (renderNumberButton dispatch)
+            // yield (Html.div (sprintf "%A" state))
         ]
 
-    let private renderFinished score dispatch =
+    let private renderFinished state dispatch =
         Html.div [
-            Html.div (sprintf "Score: %i" score)
-            Html.button [
-                prop.style [
-                    style.fontSize 20
-                    style.padding 20
+            prop.style [
+                style.textAlign.center
+            ]
+            prop.children [
+                Html.div [
+                    prop.style [
+                        style.fontWeight 600
+                        style.fontSize 18
+                        style.paddingBottom 10
+                    ]
+                    prop.children [
+                        Html.div (sprintf "Poengsum: %i" state.Score)
+                        Html.div (sprintf "Høyeste poengsum til nå: %i" state.HighScore)
+                    ]
                 ]
-                prop.onClick (fun _ -> dispatch Restart)
-                prop.text "Restart"
-        ]
-
+                Html.button [
+                    prop.style [
+                        style.fontSize 20
+                        style.padding 20
+                    ]
+                    prop.onClick (fun _ -> dispatch Restart)
+                    prop.text "Start på nytt"
+                ]
+            ]
         ]
 
     let render (state: State) (dispatch: Msg -> unit) =
@@ -210,10 +248,24 @@ If 10 numbers are displayed without clearing any out, GAME OVER!
       | Running state ->
           renderRunning state dispatch
 
-      | Finished score ->
-          renderFinished score dispatch
+      | Finished state ->
+          renderFinished state dispatch
 
 
 Program.mkProgram State.init State.update View.render
 |> Program.withReactSynchronous "elmish-app"
 |> Program.run
+
+(*
+Tens!
+
+Numbers are going to show up on the screen.
+
+Select two or three numbers that equal 10 when added up.
+
+If they are over ten, GAME OVER!
+
+If you choose three and they are under ten, GAME OVER!
+
+If 10 numbers are displayed without clearing any out, GAME OVER!
+*)
