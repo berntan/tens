@@ -43,10 +43,14 @@ module Extensions =
 module State =
     open Extensions
 
+    let random = System.Random()
+
     let private withoutCommands state =
         state, Cmd.none
 
-    let random = System.Random()
+    let init() =
+        NotStarted |> withoutCommands
+
 
     let private removeIndexAt index list =
         list
@@ -70,11 +74,6 @@ module State =
                 ()
 
         Cmd.ofSub stopTicking
-
-
-    let init() =
-        NotStarted, Cmd.none
-
 
     let private initializedGame tickId highScore =
         {
