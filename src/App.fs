@@ -39,7 +39,6 @@ module Extensions =
     [<Emit("clearInterval($0)")>]
     let clearInterval (n: int) : unit = jsNative
 
-
 module State =
     open Extensions
 
